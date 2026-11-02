@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "observedAt": null,
+  "sources": [
+    {
+      "id": "codex",
+      "state": "not_connected",
+      "limits": []
+    },
+    {
+      "id": "api",
+      "state": "not_connected",
+      "limits": []
+    },
+    {
+      "id": "chatgpt",
+      "state": "not_connected",
+      "limits": []
+    }
+  ]
+}
