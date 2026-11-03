@@ -3,9 +3,11 @@ import {createInterface} from 'node:readline';
 import {normalizeCodexRateLimits} from './codex-normalize.mjs';
 
 // Only the official local app-server's read-only account methods. Never start inference or login.
-export async function collectCodex({enabled = false, spawnImpl = spawn, timeoutMs = 15000} = {}) {
+export async function collectCodex({enabled = false, spawnImpl = spawn, timeoutMs = 15000, executable = 'codex'} = {}) {
   if (!enabled) return {id:'codex',state:'not_connected',limits:[],message:'尚未启用已授权的本机 Codex'};
-  const child = spawnImpl('codex',['app-server'],{stdio:['pipe','pipe','ignore']});
+  const env = {...process.env};
+  delete env.MONITOR_PASSWORD; delete env.OPENAI_ADMIN_KEY;
+  const child = spawnImpl(executable,['app-server'],{stdio:['pipe','pipe','ignore'],env});
   const lines = createInterface({input:child.stdout});
   const pending = new Map(); let id = 0, buffered = 0;
   const fail = () => { for (const {reject} of pending.values()) reject(Error('codex_unavailable')); pending.clear(); };

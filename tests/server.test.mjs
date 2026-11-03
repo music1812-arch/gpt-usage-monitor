@@ -30,3 +30,14 @@ test('refresh coalesces, backs off, preserves prior data and ages stale/reset wi
   clock+=60000;broken=false;await monitor.refresh();assert.equal(monitor.snapshot().sources[0].state,'ok');
   clock+=900001;assert.equal(monitor.snapshot().sources[0].state,'stale');
 });
+test('HTTPS tunnel accepts only explicitly configured origin, ignores forwarded headers',async t=>{
+  const monitor={snapshot:()=>({schemaVersion:1,sources:[]})};
+  const server=createUsageServer({monitor,password,publicOrigin:'https://monitor.example.com'});
+  await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+  const base=`http://127.0.0.1:${server.address().port}`;
+  assert.equal((await fetch(base+'/v1/usage',{headers:{...auth,Origin:'https://monitor.example.com'}})).status,200);
+  assert.equal((await fetch(base+'/v1/usage',{headers:{...auth,Origin:'https://evil.example','X-Forwarded-Host':'monitor.example.com','X-Forwarded-Proto':'https'}})).status,403);
+  assert.equal((await fetch(base+'/v1/usage',{headers:{...auth,Origin:'null'}})).status,403);
+  assert.equal((await fetch(base+'/v1/usage',{headers:{Origin:'https://monitor.example.com'}})).status,401);
+  for (const origin of ['http://monitor.example.com','https://user:password@monitor.example.com','https://monitor.example.com/path','https://monitor.example.com?token=x','https://monitor.example.com#token','https://*.example.com']) assert.throws(()=>createUsageServer({monitor,password,publicOrigin:origin}));
+});
