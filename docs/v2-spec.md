@@ -25,3 +25,11 @@ Issue #1：真实额度自动读取，API 与订阅分离，无手动录入，�
 ## Deploy / Verify
 
 以最终 PR / 交付回复中的实测记录为准。没有官方账户授权，不具备真实额度验收条件；没有经过验证的私有 HTTPS 或手机 VPN 入口，不得宣称手机端正式上线。不会合并 PR 或修改生产服务。
+
+### 实际独立测试部署结果
+
+2026-11-03，在已连接 VM 上通过 DMI 确认为 Tencent Cloud CVM。使用系统用户 chatgpt-agent 的独立目录 `/home/chatgpt-agent/gpt-usage-monitor-v2-test`，Node.js 22.23.4；`node --test` 24/24、静态检查通过。独立后台测试进程仅监听 `127.0.0.1:18791`。随机访问密码和 PID / 日志保存在仓库外 `/home/chatgpt-agent/gpt-usage-monitor-v2-runtime`；环境文件权限 0600，目录 0700。服务未启用 Codex 或管理员 API 采集。
+
+实测：未鉴权 401；鉴权 JSON 200；跨域 403；POST 405；敏感文件路径 404；响应 no-store。三个来源均为 not_connected、空 limits。后续独立请求仍返回预期 401，确认进程持续运行。没有调用 Docker、修改 Nginx / 数据库、开放端口或操作 80/443。
+
+该 loopback 地址只能在服务器或已建立的受控隧道中使用，不是可直接在 iPhone 打开的交付链接。当前授权用户 PATH / 常见位置未发现 codex，本次不使用其他系统用户会话或搬运 Token；需在测试进程同一用户下部署并完成官方登录。没有可用的已验证 VPN / 私有 HTTPS 入口，因此没有生成公开手机测试地址。实体 iPhone 验收、真实额度核对及正式上线均未完成。
