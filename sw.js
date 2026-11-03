@@ -1,1 +1,7 @@
-const CACHE='gpt-usage-v1';self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['./','./index.html','./manifest.webmanifest','./icon.svg']))));self.addEventListener('fetch',e=>{if(e.request.method==='GET'&&new URL(e.request.url).origin===location.origin)e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request)))});
+// Retire the previous cache-first worker. Private usage must never enter Cache Storage.
+self.addEventListener('install',() => self.skipWaiting());
+self.addEventListener('activate',event => event.waitUntil((async () => {
+  await caches.delete('gpt-usage-v1');
+  await self.registration.unregister();
+  await self.clients.claim();
+})()));

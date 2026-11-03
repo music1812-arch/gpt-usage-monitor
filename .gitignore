@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.*
+usage-private*.json*
+*.key
+*.pem
+auth.json
+playwright-report/
+test-results/

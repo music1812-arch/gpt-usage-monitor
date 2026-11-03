@@ -1,37 +1,27 @@
-# GPT 用量管家 V2 — 技术规格与验收
+# V2 开发交付记录
 
-## 目标
-零手动录入；仅展示来自官方认证数据源的实际额度和重置时间。任何未授权、未连接、读取失败的来源显示明确状态，不用估算值冒充真实值。
+## Intent
 
-## 数据源
-1. Codex App Server: 官方 `account/rateLimits/read`，可获取 `rateLimits`、`rateLimitsByLimitId` 中的 `usedPercent`、`windowDurationMins`、`resetsAt`。官方 `account/usage/read` 可获取 token 汇总（视权限和服务响应而定）。需要已登录且受控的 App Server；**不可在 GitHub Pages 中放认证凭据**。
-2. OpenAI API: 组织用量/成本接口，需要管理员授权；API 消费与 ChatGPT 订阅额度不可混为一谈。
-3. ChatGPT 普通消息、图片、文件、语音等额度：仅在有官方支持的授权数据源后接入。不要推断或伪造。
-4. Work/Codex 可能共享配额；必须按返回的 `limitId` 去重，不能把同一额度显示成两份。
+Issue #1：真实额度自动读取，API 与订阅分离，无手动录入，不碰生产服务，不发布私人用量。
 
-## 结构
-GitHub Pages 公开静态前端 -> 用户授权的 HTTPS 只读桥接 API -> 已认证的 Codex App Server / API 组织用量接口。
-桥接 API 必须校验访问授权、保护凭据、限制来源与频率、避免记录敏感令牌。默认不开放到互联网。
-**当前只实现静态端和协议，不部署桥接，不触碰腾讯云生产环境。**
+## Spec
 
-## 统一只读响应契约
-`GET /v1/usage` 返回 JSON:
-```json
-{
-  "schemaVersion":1,
-  "observedAt":"2026-11-02T12:00:00Z",
-  "sources":[
-    {"id":"codex","state":"ok","limits":[
-      {"id":"codex-primary","usedPercent":25,"windowDurationMins":300,"resetsAt":1793630400}
-    ]},
-    {"id":"api","state":"not_connected","limits":[]}
-  ]
-}
-```
-仅示例，不能当成实际账户数据。状态: ok / not_connected / error / stale。时间必须用 UTC 或 Unix 秒；不显示假数据。
+`GET /v1/usage`：schemaVersion=1；sources 包含 codex/api/chatgpt。每个来源独立 observedAt / lastAttemptAt、origin、state（ok/not_connected/error/stale）、limits、可选 metrics/message。API 没有 limits 也可以成功。Codex 多额度桶按 limitId/window 去重。无数据不合成数值；重置时间未知不能变成 1970 年。
 
-## 验收
-- 连接官方授权数据源，真实读取至少一项额度并核对官方页面；
-- 定时更新、错误重试、断网状态、来源时间戳、失效数据提醒；
-- 手机 Safari 可访问，凭据不出现在仓库或浏览器；
-- 无手工录入；无授权时诚实显示未连接。
+## Plan
+
+审计与官方来源核查 → 只读采集器 → 内存刷新与鉴权后端 → 手机 UI 与公开占位分离 → 测试 / CI → 独立 loopback 测试部署 → 授权边界报告。全部运行时逻辑不依赖外部 npm 包。
+
+## Code
+
+实现 Codex stdio 生命周期与官方只读握手；组织 completions + costs 有界分页、超时和重试；每来源新鲜度、刷新合并、失败保留旧值；loopback + 密码鉴权 + Host / Origin 检查 + 限频；手机页面自动重试与回到前台刷新；移除手工记录与旧离线缓存。
+
+## Test
+
+2026-11-03：`npm test` 24/24，通过；`npm run check` 通过。真实 HTTP 进程测试覆盖身份验证、Host / Origin 拒绝、只读限制、文件白名单和限频。子进程夹具验证 Codex 握手、API-key 模式拒绝和超时。API 测试仅使用协议夹具，无真实管理员授权调用。
+
+`npm run test:mobile`：系统 Chromium，390×844 与 320×700，受保护页面加载、无水平溢出、无手工输入、无 Cache Storage、网络失败及恢复、无 JS 异常。未进行实体 iPhone Safari 测试。
+
+## Deploy / Verify
+
+以最终 PR / 交付回复中的实测记录为准。没有官方账户授权，不具备真实额度验收条件；没有经过验证的私有 HTTPS 或手机 VPN 入口，不得宣称手机端正式上线。不会合并 PR 或修改生产服务。
