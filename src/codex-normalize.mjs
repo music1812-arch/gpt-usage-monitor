@@ -1,9 +1,9 @@
 /* GPT 用量管家 V2: normalize authenticated Codex App Server responses. No credentials here. */
 export function normalizeCodexRateLimits(payload, observedAt = new Date().toISOString()) {
-  if (!payload || typeof payload !== 'object') throw new Error('invalid payload');
+  if (!payload || Array.isArray(payload) || typeof payload !== 'object' || payload.error) throw new Error('invalid payload');
   const result = payload.result && typeof payload.result === 'object' ? payload.result : payload;
   const byId = result.rateLimitsByLimitId;
-  const raw = byId && typeof byId === 'object'
+  const raw = byId && typeof byId === 'object' && !Array.isArray(byId) && Object.keys(byId).length
     ? Object.entries(byId).map(([id, value]) => ({id, ...value}))
     : result.rateLimits ? [result.rateLimits] : [];
   const limits = [];
@@ -22,9 +22,9 @@ export function normalizeCodexRateLimits(payload, observedAt = new Date().toISOS
         limitId: bucketId,
         window: windowName,
         usedPercent: Math.max(0, Math.min(100, w.usedPercent)),
-        remainingPercent: Math.max(0, 100 - w.usedPercent),
-        windowDurationMins: Number.isFinite(w.windowDurationMins) ? w.windowDurationMins : null,
-        resetsAt: Number.isFinite(w.resetsAt) ? w.resetsAt : null
+        remainingPercent: 100 - Math.max(0, Math.min(100, w.usedPercent)),
+        windowDurationMins: Number.isFinite(w.windowDurationMins) && w.windowDurationMins > 0 ? w.windowDurationMins : null,
+        resetsAt: Number.isFinite(w.resetsAt) && w.resetsAt > 0 ? w.resetsAt : null
       });
     }
   }

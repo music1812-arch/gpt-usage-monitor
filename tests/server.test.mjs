@@ -1,0 +1,63 @@
+import test from 'node:test';
+import {request} from 'node:http';
+import assert from 'node:assert/strict';
+import {createUsageServer} from '../src/server.mjs';
+import {createMonitor} from '../src/monitor.mjs';
+const password='test-password-at-least-24-characters';
+const auth={Authorization:'Basic '+Buffer.from('monitor:'+password).toString('base64')};
+test('requires strong access password',()=>assert.throws(()=>createUsageServer({password:'short'})));
+test('loopback read-only authenticated allowlist and security headers',async t => {
+  const monitor=createMonitor({api:async()=>({id:'api',state:'not_connected',limits:[]})});await monitor.refresh();
+  const server=createUsageServer({monitor,password});await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+  const base=`http://127.0.0.1:${server.address().port}`;
+  assert.equal((await fetch(base+'/v1/usage')).status,401);
+  assert.equal((await fetch(base+'/v1/usage',{headers:{...auth,Origin:'https://evil.example'}})).status,403);
+  const hostile = await new Promise((resolve,reject) => {const req=request(base+'/v1/usage',{headers:{...auth,Host:'evil.example'}},r=>{r.resume();resolve(r.statusCode);});req.on('error',reject);req.end();});
+  assert.equal(hostile,403);
+  assert.equal((await fetch(base+'/v1/usage',{headers:auth,method:'POST'})).status,405);
+  assert.equal((await fetch(base+'/src/server.mjs',{headers:auth})).status,404);
+  const r=await fetch(base+'/v1/usage',{headers:auth});assert.equal(r.headers.get('cache-control'),'no-store');assert.equal(r.headers.get('access-control-allow-origin'),null);
+  assert.equal((await r.json()).sources[0].state,'not_connected');
+  const html=await (await fetch(base+'/',{headers:auth})).text();assert.match(html,/content="\.\/v1\/usage"/);
+  let last;for(let i=0;i<125;i++)last=await fetch(base+'/v1/usage',{headers:auth});assert.equal(last.status,429);
+});
+test('refresh coalesces, backs off, preserves prior data and ages stale/reset windows',async()=>{
+  let clock=1000000000000,calls=0,broken=false;
+  const monitor=createMonitor({codex:async()=>{calls++;if(broken)throw Error('credential');return {id:'codex',state:'ok',observedAt:new Date(clock).toISOString(),limits:[{usedPercent:20,resetsAt:clock/1000+120}]};}},{now:()=>clock});
+  await Promise.all([monitor.refresh(),monitor.refresh()]);assert.equal(calls,1);await monitor.refresh();assert.equal(calls,1);
+  clock+=121000;assert.equal(monitor.snapshot().sources[0].state,'stale');
+  broken=true;await monitor.refresh();let s=monitor.snapshot().sources[0];assert.equal(s.state,'error');assert.equal(s.limits[0].usedPercent,20);assert(!JSON.stringify(s).includes('credential'));
+  clock+=60000;broken=false;await monitor.refresh();assert.equal(monitor.snapshot().sources[0].state,'ok');
+  clock+=900001;assert.equal(monitor.snapshot().sources[0].state,'stale');
+});
+test('HTTPS tunnel accepts only explicitly configured origin, ignores forwarded headers',async t=>{
+  const monitor={snapshot:()=>({schemaVersion:1,sources:[]})};
+  const server=createUsageServer({monitor,password,publicOrigin:'https://monitor.example.com'});
+  await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+  const base=`http://127.0.0.1:${server.address().port}`;
+  const valid = await fetch(base+'/v1/usage',{headers:{...auth,Origin:'https://monitor.example.com'}});
+  assert.equal(valid.status,200); assert.equal(valid.headers.get('strict-transport-security'),'max-age=31536000');
+  assert.equal((await fetch(base+'/v1/usage',{headers:{...auth,Origin:'https://evil.example','X-Forwarded-Host':'monitor.example.com','X-Forwarded-Proto':'https'}})).status,403);
+  assert.equal((await fetch(base+'/v1/usage',{headers:{...auth,Origin:'null'}})).status,403);
+  assert.equal((await fetch(base+'/v1/usage',{headers:{Origin:'https://monitor.example.com'}})).status,401);
+  for (const origin of ['http://monitor.example.com','https://user:password@monitor.example.com','https://monitor.example.com/path','https://monitor.example.com?token=x','https://monitor.example.com#token','https://*.example.com']) assert.throws(()=>createUsageServer({monitor,password,publicOrigin:origin}));
+});
+test('scheduled polling cannot skip a round when wall clock is slightly early',async()=>{
+  const {startPolling}=await import('../src/monitor.mjs');
+  let clock=1000000000000,calls=0,release,scheduled,cleared;
+  const monitor=createMonitor({api:async()=>{calls++;if(calls===1)await new Promise(r=>{release=r;});return {id:'api',state:'not_connected',limits:[]};}},{now:()=>clock});
+  const stop=startPolling(monitor,{setTimer:(fn,delay)=>{scheduled={fn,delay};return 42;},clearTimer:id=>{cleared=id;}});
+  assert.equal(scheduled,undefined);clock+=500;release();await new Promise(r=>setImmediate(r));
+  assert.equal(scheduled.delay,60000);clock+=59999;await scheduled.fn();assert.equal(calls,2);
+  stop();assert.equal(cleared,42);const old=scheduled;await old.fn();assert.equal(scheduled,old);
+});
+test('gateway HTTP redirects to configured HTTPS before issuing an auth challenge',async t=>{
+  const server=createUsageServer({monitor:{snapshot:()=>({})},password,publicOrigin:'https://monitor.example.com'});
+  await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+  const base=`http://127.0.0.1:${server.address().port}`;
+  const redirect=await fetch(base+'/v1/usage?check=1',{headers:{'X-Forwarded-Proto':'http'},redirect:'manual'});
+  assert.equal(redirect.status,308);assert.equal(redirect.headers.get('location'),'https://monitor.example.com/v1/usage?check=1');assert.equal(redirect.headers.get('www-authenticate'),null);
+  assert.equal((await fetch(base+'/',{headers:{'X-Forwarded-Proto':'invalid'}})).status,400);
+  assert.equal((await fetch(base+'/',{headers:{'X-Forwarded-Proto':'https'}})).status,401);
+  assert.equal((await fetch(base+'/__proto__',{headers:auth})).status,404);
+});
