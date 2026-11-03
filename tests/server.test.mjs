@@ -42,13 +42,13 @@ test('HTTPS tunnel accepts only explicitly configured origin, ignores forwarded 
   assert.equal((await fetch(base+'/v1/usage',{headers:{Origin:'https://monitor.example.com'}})).status,401);
   for (const origin of ['http://monitor.example.com','https://user:password@monitor.example.com','https://monitor.example.com/path','https://monitor.example.com?token=x','https://monitor.example.com#token','https://*.example.com']) assert.throws(()=>createUsageServer({monitor,password,publicOrigin:origin}));
 });
-test('polling waits for collection completion before scheduling the next cooldown',async()=>{
+test('scheduled polling cannot skip a round when wall clock is slightly early',async()=>{
   const {startPolling}=await import('../src/monitor.mjs');
   let clock=1000000000000,calls=0,release,scheduled,cleared;
   const monitor=createMonitor({api:async()=>{calls++;if(calls===1)await new Promise(r=>{release=r;});return {id:'api',state:'not_connected',limits:[]};}},{now:()=>clock});
   const stop=startPolling(monitor,{setTimer:(fn,delay)=>{scheduled={fn,delay};return 42;},clearTimer:id=>{cleared=id;}});
   assert.equal(scheduled,undefined);clock+=500;release();await new Promise(r=>setImmediate(r));
-  assert.equal(scheduled.delay,60000);clock+=60000;await scheduled.fn();assert.equal(calls,2);
+  assert.equal(scheduled.delay,60000);clock+=59999;await scheduled.fn();assert.equal(calls,2);
   stop();assert.equal(cleared,42);const old=scheduled;await old.fn();assert.equal(scheduled,old);
 });
 test('gateway HTTP redirects to configured HTTPS before issuing an auth challenge',async t=>{
