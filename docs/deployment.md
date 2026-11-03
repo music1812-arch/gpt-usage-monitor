@@ -19,3 +19,29 @@
 只停止独立测试进程（以该测试目录记录的 PID 和命令为准），不要批量杀死 node 进程。删除独立测试目录即可清除测试密码与日志；采集结果仅在内存。公开 Pages 的 usage.json 必须始终保持未连接占位，CI 会校验。
 
 旧 V1 手动记录界面已撤下。旧 service worker 在更新时删除 gpt-usage-v1 缓存并注销；完全离线的旧客户端须联网更新后才能得到新界面。项目不会主动读取或上传旧 localStorage。
+
+## 已建立的独立 HTTPS 入口（2026-11-03）
+
+已在同一腾讯云 CVM 的独立 runtime 目录运行 Cloudflare Quick Tunnel；不修改现有 HTTPS 网关、DNS 或防火墙。程序来自 Cloudflare 官方软件源，2026.10.7 deb 的 SHA256 与官方 GitHub Release 元数据一致。HTTPS → Cloudflare 隧道 → `127.0.0.1:18791`，应用层仍要求独立随机密码；没有匿名用量页面。指标仅监听 `127.0.0.1:18792`。
+
+这是临时访问入口：进程重建可能更换域名，服务器重启不会自动恢复，不应当作有可用性承诺的正式域名。当前入口及独立访问凭据通过本次私有交付提供，不写入 GitHub。监控密码保存在仓库外权限 0600 的 runtime/environment；没有 OpenAI 凭据。Quick Tunnel 的 TLS 由 Cloudflare 提供，流量经过该服务；需要固定域名时应另行审批并使用受控长期入口。
+
+`MONITOR_PUBLIC_ORIGIN` 可指定单个 HTTPS origin，拒绝用户名 / 密码、通配符、路径和查询参数。网关将 Host 固定为 loopback；后端只允许该明确 origin，不根据客户端转发头放行跨域；启用 HSTS 和 no-store。密码保留在应用层，不依赖随机域名的保密性。
+
+### 实际验证
+
+- 腾讯云经公网 HTTPS 请求：证书校验通过；未登录 401、错误密码 401、已登录页面 / JS / API 200、跨域 403、POST 405、敏感路径 404。
+- API 返回 codex / api / chatgpt 三个未连接来源，空 limits。独立安装官方 Codex CLI 0.166.0，`codex login status` 为 Not logged in；已启用自动只读账户检查，不发起推理或登录绕过。
+- 当前工作区经自身出口访问此域名得到 Cloudflare 的 403，未绕过；腾讯云出口能正常完成上述 HTTPS 验证。不能据此保证所有手机网络都可达。
+- WebKit（Safari 引擎）与 Chromium 手机尺寸测试通过，CI 加入 WebKit 检查；未连接实体 iPhone，仍需以实际手机打开结果为准。
+- 只操作独立代码目录 / runtime 和自身进程，生产 80/443、其他监听服务及现有应用配置不变。
+
+### 独立进程重启 / 停止
+
+只使用 runtime/server.pid 与 runtime/tunnel.pid 标识的进程。操作前必须核对 `/proc/<pid>/cwd` 和 `/proc/<pid>/cmdline` 与本项目 / 独立 cloudflared 相符，避免 PID 重用误伤。启动服务时从权限受控的 environment 文件读取配置到内存，不把密码放到命令行或日志。若重建 Quick Tunnel，更新 MONITOR_PUBLIC_ORIGIN 为新 origin，并仅重启本项目进程。停止两个独立进程并删除 runtime 目录即可撤销入口；无生产网关回滚需求。
+
+### yidings.cn 长期域名的审批边界
+
+此次未修改 yidings.cn。正式切换前，最小方案是新增一个单独主机名及其虚拟主机，只转发本项目 loopback 端口，继续保留应用密码和禁缓存；不改现有 server / upstream。执行前需由有权限的操作者确认 DNS 管理方式、实际网关配置路径及证书是否覆盖新主机名。
+
+备份：变更前保存该网关的完整配置、有效配置导出、证书配置路径和 DNS 原值，并校验可恢复。验证：配置语法检查、已有应用基线检查、新域名 TLS / 401 / 鉴权 / 跨域 / Safari 检查。回滚：删除新增虚拟主机、恢复对应 DNS 原值及备份，只在语法检查成功后 reload；复查已有应用。必须在用户确认具体差异和备份之后执行，当前未执行。

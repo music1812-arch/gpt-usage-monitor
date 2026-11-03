@@ -17,6 +17,8 @@ Node.js 22+，运行时无第三方依赖。通过受保护的服务环境注入
 | --- | --- |
 | `MONITOR_PASSWORD` | 监控页面独立访问密码，必需 |
 | `MONITOR_PORT` | 默认 `18791`；仅允许 1024–65535 |
+| `MONITOR_PUBLIC_ORIGIN` | 可选单个受控 HTTPS origin，仅用于独立网关 / 隧道 |
+| `CODEX_BIN` | 可选官方 Codex 可执行文件绝对路径 |
 | `CODEX_ENABLED=1` | 启用本机已官方授权的 Codex；默认关闭 |
 | `OPENAI_ADMIN_KEY` | 可选组织管理员密钥；缺失时不发 API 请求 |
 
@@ -32,6 +34,9 @@ npm run check
 npm test
 # 可选：安装系统 Chromium 后进行手机尺寸浏览器检查
 CHROMIUM_PATH=/usr/bin/chromium npm run test:mobile
+# 可选：Safari 引擎检查（CI 已启用）
+npx playwright-core install --with-deps webkit
+npm run test:webkit
 ```
 
 手机测试自动生成临时随机访问密码，不使用个人用量，截图保存在忽略的 `test-results/`。Chromium 390px / 320px 通过不等于真实 iPhone Safari 已验收。测试中的数值只是隔离的协议夹具，应用不提供演示额度。

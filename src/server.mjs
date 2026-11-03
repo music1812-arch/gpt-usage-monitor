@@ -20,6 +20,7 @@ export function createUsageServer({monitor, password, publicOrigin} = {}) {
   const files = {'/':['../v2.html','text/html; charset=utf-8'],'/v2.html':['../v2.html','text/html; charset=utf-8'],'/app.mjs':['../app.mjs','text/javascript; charset=utf-8']};
   let requests = 0, windowStart = Date.now();
   return createServer(async (req,res) => {
+    if (allowedOrigin) res.setHeader('Strict-Transport-Security','max-age=31536000');
     res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('X-Robots-Tag','noindex, nofollow');
     res.setHeader('Referrer-Policy','no-referrer'); res.setHeader('X-Frame-Options','DENY');

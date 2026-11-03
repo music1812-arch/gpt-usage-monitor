@@ -35,7 +35,8 @@ test('HTTPS tunnel accepts only explicitly configured origin, ignores forwarded 
   const server=createUsageServer({monitor,password,publicOrigin:'https://monitor.example.com'});
   await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
   const base=`http://127.0.0.1:${server.address().port}`;
-  assert.equal((await fetch(base+'/v1/usage',{headers:{...auth,Origin:'https://monitor.example.com'}})).status,200);
+  const valid = await fetch(base+'/v1/usage',{headers:{...auth,Origin:'https://monitor.example.com'}});
+  assert.equal(valid.status,200); assert.equal(valid.headers.get('strict-transport-security'),'max-age=31536000');
   assert.equal((await fetch(base+'/v1/usage',{headers:{...auth,Origin:'https://evil.example','X-Forwarded-Host':'monitor.example.com','X-Forwarded-Proto':'https'}})).status,403);
   assert.equal((await fetch(base+'/v1/usage',{headers:{...auth,Origin:'null'}})).status,403);
   assert.equal((await fetch(base+'/v1/usage',{headers:{Origin:'https://monitor.example.com'}})).status,401);
