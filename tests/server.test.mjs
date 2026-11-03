@@ -51,3 +51,13 @@ test('polling waits for collection completion before scheduling the next cooldow
   assert.equal(scheduled.delay,60000);clock+=60000;await scheduled.fn();assert.equal(calls,2);
   stop();assert.equal(cleared,42);const old=scheduled;await old.fn();assert.equal(scheduled,old);
 });
+test('gateway HTTP redirects to configured HTTPS before issuing an auth challenge',async t=>{
+  const server=createUsageServer({monitor:{snapshot:()=>({})},password,publicOrigin:'https://monitor.example.com'});
+  await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+  const base=`http://127.0.0.1:${server.address().port}`;
+  const redirect=await fetch(base+'/v1/usage?check=1',{headers:{'X-Forwarded-Proto':'http'},redirect:'manual'});
+  assert.equal(redirect.status,308);assert.equal(redirect.headers.get('location'),'https://monitor.example.com/v1/usage?check=1');assert.equal(redirect.headers.get('www-authenticate'),null);
+  assert.equal((await fetch(base+'/',{headers:{'X-Forwarded-Proto':'invalid'}})).status,400);
+  assert.equal((await fetch(base+'/',{headers:{'X-Forwarded-Proto':'https'}})).status,401);
+  assert.equal((await fetch(base+'/__proto__',{headers:auth})).status,404);
+});

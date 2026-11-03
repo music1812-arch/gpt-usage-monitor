@@ -26,6 +26,16 @@ export function createUsageServer({monitor, password, publicOrigin} = {}) {
     res.setHeader('Referrer-Policy','no-referrer'); res.setHeader('X-Frame-Options','DENY');
     res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
     const finish = (code,body) => { res.statusCode=code; res.end(body); };
+    // The dedicated HTTPS gateway must overwrite this header. Never challenge for
+    // a password on its plaintext HTTP entry point; keep direct loopback probes.
+    const scheme = req.headers['x-forwarded-proto'];
+    if (allowedOrigin && scheme !== undefined && scheme !== 'https') {
+      if (scheme !== 'http') return finish(400,'Invalid forwarded scheme');
+      let path; try { const url = new URL(req.url,'http://localhost'); path = url.pathname + url.search; }
+      catch { return finish(400,'Invalid path'); }
+      res.setHeader('Location',allowedOrigin + path);
+      return finish(308,'Use HTTPS');
+    }
     const host = req.headers.host || '';
     if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(host)) return finish(403,'Forbidden host');
     if (req.headers.origin && req.headers.origin !== 'http://'+host && req.headers.origin !== allowedOrigin) return finish(403,'Forbidden origin');
@@ -42,7 +52,7 @@ export function createUsageServer({monitor, password, publicOrigin} = {}) {
       if (path === '/v1/usage') {
         res.setHeader('Content-Type','application/json; charset=utf-8'); return finish(200,JSON.stringify(monitor.snapshot()));
       }
-      const entry = files[path]; if (!entry) return finish(404,'Not found');
+      const entry = Object.hasOwn(files,path) ? files[path] : null; if (!entry) return finish(404,'Not found');
       res.setHeader('Content-Type',entry[1]); const data = await readFile(new URL(entry[0],import.meta.url),'utf8');
       finish(200,entry[1].startsWith('text/html') ? data.replace('content="./usage.json"','content="./v1/usage"') : data);
     } catch { finish(500,'Internal error'); }
