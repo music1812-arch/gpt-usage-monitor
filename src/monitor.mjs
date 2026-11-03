@@ -22,3 +22,15 @@ export function createMonitor(collectors, {now = Date.now, intervalMs = 60000, s
   }
   return {refresh,snapshot};
 }
+
+// Schedule after completion so the cache cooldown cannot skip the next interval.
+export function startPolling(monitor, {intervalMs = 60000, setTimer = setTimeout, clearTimer = clearTimeout} = {}) {
+  let stopped = false, timer;
+  async function tick() {
+    if (stopped) return;
+    try { await monitor.refresh(); }
+    finally { if (!stopped) timer = setTimer(tick,intervalMs); }
+  }
+  void tick();
+  return () => { stopped = true; if (timer !== undefined) clearTimer(timer); };
+}

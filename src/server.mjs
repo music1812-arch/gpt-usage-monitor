@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 import {timingSafeEqual} from 'node:crypto';
 import {collectApiUsage} from './api-usage-collector.mjs';
 import {collectCodex} from './codex-collector.mjs';
-import {createMonitor} from './monitor.mjs';
+import {createMonitor, startPolling} from './monitor.mjs';
 
 export function validatePublicOrigin(value) {
   if (!value) return null;
@@ -54,7 +54,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const monitor = createMonitor({codex:() => collectCodex({enabled:process.env.CODEX_ENABLED === '1',executable:process.env.CODEX_BIN || 'codex'}),api:() => collectApiUsage({key:process.env.OPENAI_ADMIN_KEY}),chatgpt:async () => ({id:'chatgpt',state:'not_connected',limits:[],message:'未接入经过验证的普通 ChatGPT 额度接口'})});
   const server = createUsageServer({monitor,password:process.env.MONITOR_PASSWORD,publicOrigin:process.env.MONITOR_PUBLIC_ORIGIN});
   server.listen(port,'127.0.0.1',() => console.log(`Private test service: http://127.0.0.1:${port}`));
-  void monitor.refresh();
-  const timer=setInterval(() => { void monitor.refresh(); },60000);
-  for (const sig of ['SIGTERM','SIGINT']) process.on(sig,() => {clearInterval(timer);server.close();});
+  const stopPolling=startPolling(monitor);
+  for (const sig of ['SIGTERM','SIGINT']) process.on(sig,() => {stopPolling();server.close();});
 }
